@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import secrets
 import socket
 import sys
@@ -180,7 +179,7 @@ def _build_notes() -> Tuple[List[dict], float]:
     return notes, length_beats
 
 
-def run(auth_token: str) -> int:
+def run() -> int:
     cfg = bridge.BridgeConfig(
         host=HOST,
         port=PORT,
@@ -221,7 +220,6 @@ def run(auth_token: str) -> int:
         api_calls=(),
         api_children=(),
         api_describes=(),
-        auth_token=auth_token,
         delay_ms=0,
         dry_run=False,
     )
@@ -269,9 +267,9 @@ def run(auth_token: str) -> int:
             failure_code = 3
             execute(bridge.OscCommand(
                 "/api/call",
-                bridge.authenticated_args(auth_token, (
+                (
                     "live_set", "create_midi_track", json.dumps([-1]), _smoke_request_id("create-track")
-                )),
+                ),
             ))
             tracks_after = tracks_snapshot("tracks-after")
             new_track_index = _new_track_index(tracks_before, tracks_after)
@@ -291,18 +289,18 @@ def run(auth_token: str) -> int:
             for target, prop, value in properties:
                 execute(bridge.OscCommand(
                     "/api/set",
-                    bridge.authenticated_args(auth_token, (
+                    (
                         target, prop, json.dumps(value), _smoke_request_id(f"set-{prop}")
-                    )),
+                    ),
                 ))
 
             notes, clip_length = _build_notes()
             execute(bridge.OscCommand(
                 "/set_session_clip_notes",
-                bridge.authenticated_args(auth_token, (
+                (
                     new_track_index, 0, clip_length,
                     json.dumps({"notes": notes}, separators=(",", ":")), name,
-                )),
+                ),
             ), timeout_s=1.5)
             inspect = bridge.OscCommand("/inspect_session_clip_notes", (new_track_index, 0))
             inspect_acks = execute(inspect, timeout_s=1.5)
@@ -353,31 +351,15 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         required=True,
         help="Required confirmation that this smoke test mutates the active Live set.",
     )
-    parser.add_argument(
-        "--auth-token",
-        default=os.environ.get(bridge.AUTH_TOKEN_ENV),
-        required=os.environ.get(bridge.AUTH_TOKEN_ENV) is None,
-        help=(
-            "Capability token configured in the Max device "
-            f"(default: {bridge.AUTH_TOKEN_ENV} environment variable)"
-        ),
-    )
     return parser.parse_args(list(argv))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     try:
-        ns = parse_args(sys.argv[1:] if argv is None else argv)
-        auth_token = bridge.normalize_auth_token(ns.auth_token)
+        parse_args(sys.argv[1:] if argv is None else argv)
     except SystemExit as exc:
         return int(exc.code or 0)
-    except ValueError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 2
-    if auth_token is None:
-        print("error: auth token is required", file=sys.stderr)
-        return 2
-    return run(auth_token)
+    return run()
 
 
 if __name__ == "__main__":

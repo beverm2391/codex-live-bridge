@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# loc-check: limit 700 | reason: Hermetic installer tests share one fixture lifecycle and mirror one command-line tool.
 """Hermetic integration tests for safe Max for Live device maintenance."""
 
 from __future__ import annotations
@@ -181,7 +182,6 @@ class AbletonDeviceCommandTests(unittest.TestCase):
                 "runtimeIdentityVerified",
                 "verifiedLive",
                 "backupDir",
-                "tokenConfigured",
                 "hashes",
             },
         )
@@ -234,7 +234,7 @@ class AbletonDeviceCommandTests(unittest.TestCase):
             str(entry["box"].get("text", ""))
             for entry in staged["patcher"]["boxes"]
         ]
-        self.assertIn(f"set_auth_token {PRIVATE_TOKEN}", texts)
+        self.assertFalse(any(text.startswith("set_auth_token ") for text in texts))
         self.assertTrue(
             any(
                 text.startswith("node.script osc_loopback_receiver.js")
@@ -281,7 +281,7 @@ class AbletonDeviceCommandTests(unittest.TestCase):
             },
         )
 
-    def test_default_stages_secure_device_and_preserves_installed_state(self) -> None:
+    def test_default_stages_loopback_device_and_preserves_installed_state(self) -> None:
         original = self._installed_snapshot()
 
         completed = self._run_tool()
@@ -292,24 +292,22 @@ class AbletonDeviceCommandTests(unittest.TestCase):
         self.assertFalse(summary["liveStatusVerified"])
         self.assertFalse(summary["runtimeIdentityVerified"])
         self.assertIsNone(summary["backupDir"])
-        self.assertTrue(summary["tokenConfigured"])
         self.assertFalse(self.backup_root.exists())
         self.assertEqual(self._installed_snapshot(), original)
         self._assert_staged_device(summary)
 
-    def test_disabled_authentication_stays_disabled_in_staged_device(self) -> None:
+    def test_legacy_auth_message_is_removed_from_staged_device(self) -> None:
         installed_document = copy.deepcopy(self.installed_document)
-        for entry in installed_document["patcher"]["boxes"]:
-            box = entry["box"]
-            if str(box.get("text", "")).startswith("set_auth_token "):
-                box["text"] = "set_auth_token CHANGE_ME_BEFORE_USE"
+        installed_document["patcher"]["boxes"].append(
+            {"box": {"id": "legacy-auth", "maxclass": "message", "text":
+                     f"set_auth_token {PRIVATE_TOKEN}"}}
+        )
         self.device_path.write_bytes(_encode_device(installed_document))
         original = self._installed_snapshot()
 
         completed = self._run_tool()
         summary = self._summary(completed)
 
-        self.assertFalse(summary["tokenConfigured"])
         self.assertEqual(self._installed_snapshot(), original)
         _, staged = _decode_device(Path(str(summary["stageDir"])) / DEVICE_NAME)
         token_messages = [
@@ -317,7 +315,7 @@ class AbletonDeviceCommandTests(unittest.TestCase):
             for entry in staged["patcher"]["boxes"]
             if str(entry["box"].get("text", "")).startswith("set_auth_token ")
         ]
-        self.assertEqual(token_messages, ["set_auth_token CHANGE_ME_BEFORE_USE"])
+        self.assertEqual(token_messages, [])
 
     def test_explicit_install_preserves_private_persistent_backup(self) -> None:
         original = self._installed_snapshot()
@@ -327,7 +325,6 @@ class AbletonDeviceCommandTests(unittest.TestCase):
 
         self.assertTrue(summary["installed"])
         self.assertFalse(summary["verifiedLive"])
-        self.assertTrue(summary["tokenConfigured"])
         stage_dir = self._assert_staged_device(summary)
         backup_dir = Path(str(summary["backupDir"]))
         self.assertTrue(backup_dir.is_relative_to(self.backup_root))

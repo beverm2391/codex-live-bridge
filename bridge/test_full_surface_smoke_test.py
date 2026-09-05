@@ -15,9 +15,6 @@ sys.path.append(str(pathlib.Path(__file__).resolve().parent))
 import full_surface_smoke_test as smoke
 
 
-TEST_AUTH_TOKEN = "test-auth-token-0123456789"
-
-
 class FullSurfaceSmokeSafetyTests(unittest.TestCase):
     def test_requires_explicit_mutating_flag(self) -> None:
         self.assertTrue(hasattr(smoke, "parse_args"))
@@ -34,15 +31,9 @@ class FullSurfaceSmokeSafetyTests(unittest.TestCase):
 
     def test_main_runs_with_explicit_mutating_flag(self) -> None:
         with mock.patch.object(smoke, "run", return_value=0) as run:
-            exit_code = smoke.main(
-                [
-                    smoke.MUTATING_FLAG,
-                    "--auth-token",
-                    TEST_AUTH_TOKEN,
-                ]
-            )
+            exit_code = smoke.main([smoke.MUTATING_FLAG])
         self.assertEqual(exit_code, 0)
-        run.assert_called_once_with(TEST_AUTH_TOKEN)
+        run.assert_called_once_with()
 
     def test_new_track_index_requires_exactly_one_created_track(self) -> None:
         tracks_before = [{"index": 0, "id": 100, "path": "live_set tracks 0"}]
@@ -214,7 +205,7 @@ class FullSurfaceSmokeSafetyTests(unittest.TestCase):
             _event, request_id = smoke.bridge._command_ack_expectation(command)
             request = [] if request_id is None else [request_id]
             if command.address == fail_address or (
-                command.address == "/api/set" and command.args[2] == fail_property
+                command.address == "/api/set" and command.args[1] == fail_property
             ):
                 return [("/ack", [
                     "error", "fixture_rejected", "request_correlation", f"req:{request_id or ''}"
@@ -230,9 +221,9 @@ class FullSurfaceSmokeSafetyTests(unittest.TestCase):
                 return [("/ack", ["api_children", "live_set", "tracks", json.dumps(tracks), *request])]
             if command.address == "/api/call":
                 created = True
-                return [("/ack", ["api_call", command.args[1], command.args[2], "[]", *request])]
+                return [("/ack", ["api_call", command.args[0], command.args[1], "[]", *request])]
             if command.address == "/api/set":
-                return [("/ack", ["api_set", command.args[1], command.args[2], '{"ok":true}', *request])]
+                return [("/ack", ["api_set", command.args[0], command.args[1], '{"ok":true}', *request])]
             if command.address == "/api/get":
                 values = {
                     "tempo": 142.0,
@@ -259,7 +250,7 @@ class FullSurfaceSmokeSafetyTests(unittest.TestCase):
             mock.patch("sys.stdout"),
             mock.patch("sys.stderr"),
         ):
-            return smoke.run(TEST_AUTH_TOKEN), ack_socket
+            return smoke.run(), ack_socket
 
     @staticmethod
     def _inspection_acks(
@@ -333,7 +324,9 @@ class FullSurfaceSmokeSafetyTests(unittest.TestCase):
                 code, ack = self._run_with_final_acks([], [], initial_tracks=baseline)
                 self.assertEqual(
                     [command.address for command in ack.sent_commands
-                     if command.address in smoke.bridge.PROTECTED_OSC_ADDRESSES],
+                     if command.address in {
+                         "/api/call", "/api/set", "/set_session_clip_notes"
+                     }],
                     [],
                 )
                 self.assertEqual(code, 2)
@@ -390,7 +383,7 @@ class FullSurfaceSmokeSafetyTests(unittest.TestCase):
             mock.patch("sys.stdout"),
             mock.patch("sys.stderr"),
         ):
-            code = smoke.run(TEST_AUTH_TOKEN)
+            code = smoke.run()
         self.assertNotEqual(code, 0)
         ack.close.assert_called_once()
 

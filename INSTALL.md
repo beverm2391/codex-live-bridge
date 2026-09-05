@@ -31,8 +31,7 @@ you need to build your own copy.
 python3 bridge/ableton_udp_bridge.py --ack --status --no-tempo --no-signature
 ```
 
-Read-only inspection does not require a token. Configure one only when you
-need writes, observer lifecycle changes, or another protected command.
+The bridge is ready for local reads and writes when the device responds.
 
 ## Package From Source
 
@@ -68,8 +67,7 @@ On macOS, the default baseline is the existing device at:
 ```
 
 The command rebuilds the device from the tracked Max patch in a private
-temporary directory. It preserves the installed device metadata and any
-configured local token. An existing baseline does not need to be opened in Max
+temporary directory. It preserves the installed device metadata. An existing baseline does not need to be opened in Max
 or rediscovered through the Ableton interface.
 
 To replace the installed files, keep Ableton Live open with the bridge loaded
@@ -87,7 +85,7 @@ device and JavaScript files under:
 ~/Library/Application Support/codex-live-bridge/backups
 ```
 
-It then checks the running bridge with a token-free localhost status request.
+It then checks the running bridge with a localhost status request.
 If verification fails, all three installed files are restored from the backup.
 Override paths with `--device PATH`, `--output-dir DIR`, `--backup-dir DIR`,
 or `--python PATH`. Output and backup directories inside this repository are
@@ -100,29 +98,15 @@ alias for `liveStatusVerified`. An older loaded device can answer the status
 request, so this check does not establish which code is running. Reload the
 device and verify the changed commands separately in a disposable set.
 
-Staged devices and backups can contain the existing local token. Keep them
-private. Do not commit or upload them. Public release packages must use a
-placeholder-only device.
+Keep staged devices and backups private. Do not commit or upload them.
 
-## Configure Authenticated Writes
+## Local Control Boundary
 
-Skip this section if you only need read-only inspection. Writes, observer
-registration, and other protected commands require the same local token in
-both the device and the Python client.
-
-1. Open the device with **Edit in Max**.
-2. Replace `CHANGE_ME_BEFORE_USE` in the `set_auth_token` message with a
-   unique local token of 16 to 256 UTF-8 bytes.
-3. Save and reload the device.
-4. Paste the same token into hidden terminal input and export it for the
-   Python client:
-
-```bash
-read -rs CODEX_LIVE_BRIDGE_TOKEN
-export CODEX_LIVE_BRIDGE_TOKEN
-```
-
-Leave `CHANGE_ME_BEFORE_USE` unchanged when writes should remain disabled.
+The bridge has no application-level authentication. Its command receiver binds
+only to `127.0.0.1`, and the Python client refuses non-loopback targets. Any
+local process running as a user on this Mac can send reads or mutations while
+the device is loaded. Use a dedicated bridge track, inspect before mutations,
+make narrow changes, and verify state afterward.
 
 ## Source Editing
 
@@ -134,11 +118,7 @@ node scripts/ableton-device.js --install --verify-live
 ```
 
 Run the static checks from `README.md`. Reload the device when the current Live
-set needs to pick up a changed Max patch. If writes are enabled, confirm the
-local token still matches `CODEX_LIVE_BRIDGE_TOKEN`.
+set needs to pick up a changed Max patch.
 
 For a first installation, follow [Package From Source](#package-from-source)
 to create the initial device.
-
-Keep real tokens in local packaged devices and environment state. Do not commit
-them to the tracked `.maxpat` source.

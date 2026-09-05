@@ -7,8 +7,8 @@ not in the 3.1.0 release. Use the source setup below for these fixes; a newer
 release package is not yet available.
 
 `codex-live-bridge` is a Max for Live OSC/UDP bridge for Ableton Live. It lets
-codex and local scripts inspect a Live set through LiveAPI. A local capability
-token also allows controlled changes when you choose to configure one.
+codex and local scripts inspect and change a Live set through LiveAPI on the
+same workstation.
 
 The repo ships the editable Max patch and the JavaScript files that run the
 bridge. A Python OSC client/CLI sends local commands on UDP `9000` and receives
@@ -98,24 +98,15 @@ ack:  /ack pong
 ack:  /ack status <total_tracks> <midi_tracks> <audio_tracks> <return_tracks> live_set <id>
 ```
 
-Read-only commands do not require a token. With `--ack`, the client exits with
+With `--ack`, the client exits with
 an error if its reply listener cannot open, a complete matching response does
 not arrive, or the bridge reports an error. It does not send the command when
 the listener cannot open.
 
-5. Optional: configure a local token for writes and observers:
-
-```bash
-export CODEX_LIVE_BRIDGE_TOKEN="$(
-  python3 -c 'import secrets; print(secrets.token_urlsafe(32))'
-)"
-printf '%s\n' "$CODEX_LIVE_BRIDGE_TOKEN"
-```
-
-Copy the printed token into the Max `set_auth_token CHANGE_ME_BEFORE_USE`
-message, replacing `CHANGE_ME_BEFORE_USE`. Save and reload the local device.
-The exported environment variable gives the Python client the same token.
-Keep real tokens out of the tracked `.maxpat` source.
+5. Keep the bridge local. There is no application-level authentication: any
+process running as a user on this Mac can send commands to the bridge. The
+receiver binds only to `127.0.0.1`, and the client refuses non-loopback targets.
+Inspect before writes, keep mutations narrow, and read back changed state.
 
 The editable `.maxpat` file is the canonical tracked source. Packaged `.amxd`
 devices are release artifacts saved from a Live-hosted Max MIDI Effect.
@@ -131,7 +122,7 @@ node scripts/ableton-device.js
 This command only stages the device and both JavaScript files in a private
 temporary directory. It does not change the installed files. Its JSON output
 includes `stageDir`, `installed`, `liveStatusVerified`,
-`runtimeIdentityVerified`, `backupDir`, `tokenConfigured`, and `hashes`.
+`runtimeIdentityVerified`, `backupDir`, and `hashes`.
 The deprecated `verifiedLive` field is an alias for `liveStatusVerified`.
 
 To update the installation and check the running Ableton bridge's status:
@@ -140,10 +131,9 @@ To update the installation and check the running Ableton bridge's status:
 node scripts/ableton-device.js --install --verify-live
 ```
 
-Installation requires `--install`. It preserves the existing device metadata
-and write token. A persistent backup restores the previous files if the
-token-free Live status check fails. Staged devices and backups can contain a
-configured token. Keep them private and do not commit or upload them. See
+Installation requires `--install`. It preserves the existing device metadata.
+A persistent backup restores the previous files if the Live status check fails.
+Keep staged devices and backups private and do not commit or upload them. See
 `INSTALL.md` for default locations and command options.
 
 A successful status check can come from an older loaded device. It does not
@@ -192,10 +182,8 @@ The generic RPC layer can reach broad LiveAPI behavior. Automation defaults and
 examples should favor read commands, bounded writes, explicit request IDs, and
 clear user approval for mutations.
 
-Read-only commands are tokenless. Writes, generic calls, observer lifecycle
-changes, track and clip mutations, insertion, and MIDI output require the
-local capability token through `--auth-token` or
-`CODEX_LIVE_BRIDGE_TOKEN`.
+All commands are local and token-free. The receiver is loopback-only; clients
+should inspect before mutation and verify changed state afterward.
 
 ## Role In The Hybrid Architecture
 
@@ -307,7 +295,7 @@ native runtime omitted those two fields. Cross-surface consumers comparing
 those responses must use ID-free matching and report the missing release
 velocity. Later SDK/runtime combinations require fresh qualification.
 
-Register and listen for tempo changes after configuring the local token:
+Register and listen for tempo changes:
 
 ```bash
 python3 bridge/ableton_udp_bridge.py --ack --listen --listen-timeout 30 \
@@ -377,10 +365,10 @@ learn a user profile or improve itself from behavior over time.
 
 ## Security Boundary
 
-The OSC bridge uses a local capability token for writes and persistent control.
-Read-only inspection remains tokenless. The shipped command receiver binds
-explicitly to `127.0.0.1:9000`, and the Python client rejects non-loopback
-targets. UDP does not encrypt the token or Live data. The reply client binds
+The OSC bridge has no application-level authentication. The shipped command
+receiver binds explicitly to `127.0.0.1:9000`, and the Python client rejects
+non-loopback targets. Any process running as a user on the workstation can send
+commands while the device is loaded. The reply client binds
 `127.0.0.1:9001` only while it is listening. Treat generic `/api/set` and
 `/api/call` commands as powerful local LiveAPI access. Only one ACK-listening
 client can bind the default `9001` port at a time.

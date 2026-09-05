@@ -1,4 +1,5 @@
 # Codex Live Bridge Protocol
+<!-- loc-check: limit 750 | reason: Canonical wire protocol stays in one document so command contracts and safety classes remain synchronized. -->
 
 This document defines the public OSC/UDP protocol for the Max for Live bridge. It is intentionally path-first: clients address Live Object Model objects by path strings such as `live_set`, `live_set tracks 0`, and `live_set tracks 0 clip_slots 0 clip`.
 
@@ -19,22 +20,15 @@ The bridge should be loaded in Ableton Live through the shipped Max patch/device
 
 The shipped command receiver binds explicitly to `127.0.0.1:9000`. The Python
 client accepts loopback destinations only. Keep ACK traffic bound to
-`127.0.0.1`; UDP does not encrypt the capability token or Live data.
+`127.0.0.1`; UDP does not encrypt Live data.
 
-## Authentication
+## Local Trust Boundary
 
-Read-only commands remain tokenless. Mutating commands and observer lifecycle
-changes require a capability token as their first OSC argument.
-
-Configure the token locally by replacing `CHANGE_ME_BEFORE_USE` in the Max
-patch's `set_auth_token` message, then save and reload the device. Tokens must
-be 16 to 256 UTF-8 bytes. The placeholder is rejected and leaves mutations
-disabled.
-
-The Python CLI reads the same value from `--auth-token` or
-`CODEX_LIVE_BRIDGE_TOKEN`. Missing configuration returns
-`auth_not_configured`; a mismatch returns `unauthorized_command`. Neither error
-echoes the supplied token.
+The protocol has no application-level authentication. Any process running as a
+user on the workstation can send reads, writes, or observer commands while the
+device is loaded. Loopback binding keeps the protocol off the network; OS account
+security is the trust boundary. Clients should inspect before writes,
+make narrow mutations, and verify changed state afterward.
 
 The Node-for-Max receiver accepts single OSC messages from the loopback socket.
 It rejects bundles, malformed messages, unsupported types, nonfinite floats,
@@ -108,8 +102,8 @@ retrying a write. Request IDs provide correlation, not idempotency.
 ```text
 /api/ping [request_id]
 /api/get <path> <property> [request_id]
-/api/set <auth_token> <path> <property> <value_json> [request_id]
-/api/call <auth_token> <path> <method> <args_json> [request_id]
+/api/set <path> <property> <value_json> [request_id]
+/api/call <path> <method> <args_json> [request_id]
 /api/children <path> <child_name> [request_id]
 /api/describe <path> [request_id]
 ```
@@ -165,10 +159,10 @@ frozen inspection schema.
 ## Observer Commands
 
 ```text
-/api_observe <auth_token> <path> <property> [options_json] [request_id]
-/api_unobserve <auth_token> <observer_id> [request_id]
+/api_observe <path> <property> [options_json] [request_id]
+/api_unobserve <observer_id> [request_id]
 /api_observers [request_id]
-/api_clear_observers <auth_token> [request_id]
+/api_clear_observers [request_id]
 ```
 
 `options_json` may include:
@@ -434,8 +428,8 @@ metadata, devices, request correlation, and complete Live 12 note fields.
 
 ## Packet-Bounded Arrangement Inspection
 
-The unreleased source uses producer version 3.2.0 for three tokenless,
-read-only Arrangement commands. The wire producer version does not imply that
+The unreleased source uses producer version 3.2.0 for three read-only
+Arrangement commands. The wire producer version does not imply that
 a 3.2.0 release package exists:
 
 ```text
@@ -543,7 +537,7 @@ flag.
 /api/device_list <track_ref|all> [request_id]
 /api/device_parameters <device_path> [request_id]
 /api/mixer_status <track_ref|master|return:N> [request_id]
-/api/parameter_set <auth_token> <parameter_path> <value_json> [request_id]
+/api/parameter_set <parameter_path> <value_json> [request_id]
 ```
 
 Successful ACKs:
@@ -560,7 +554,7 @@ Safety classes:
 - `device_list`, `device_parameters`, and `mixer_status`: read.
 - `parameter_set`: bounded write.
 
-Tokenless collection wrappers accept at most 256 items from one collection and
+Collection wrappers accept at most 256 items from one collection and
 512 aggregate items per request. They check a 1,000-ms work budget and reject JSON
 responses above 49,152 UTF-8 bytes with a correlated limit error.
 
@@ -569,9 +563,9 @@ responses above 49,152 UTF-8 bytes with a correlated limit error.
 ## Live 12.3 Native Insertion Wrappers
 
 ```text
-/api/insert_device <auth_token> <track_or_chain_path> <native_device_name> <target_index_or_empty> [request_id]
-/api/insert_chain <auth_token> <rack_device_path> <target_index_or_empty> [request_id]
-/api/drum_chain_in_note <auth_token> <drum_chain_path> <note|-1> [request_id]
+/api/insert_device <track_or_chain_path> <native_device_name> <target_index_or_empty> [request_id]
+/api/insert_chain <rack_device_path> <target_index_or_empty> [request_id]
+/api/drum_chain_in_note <drum_chain_path> <note|-1> [request_id]
 ```
 
 Successful ACKs:
@@ -596,24 +590,24 @@ verified and `api_drum_chain_in_note_write_not_applied` when Live returns a
 different applied value. Live documents `-1` as the Drum Chain "All Notes"
 setting, but runtime support can vary by Live build and rack context.
 
-## Protected Core Commands
+## Core Mutation Commands
 
 ```text
-/tempo <auth_token> <bpm>
-/sig_num <auth_token> <numerator>
-/sig_den <auth_token> <denominator>
-/create_midi_track <auth_token>
-/add_midi_tracks <auth_token> <count> [name]
-/create_audio_track <auth_token>
-/add_audio_tracks <auth_token> <count> [prefix]
-/delete_audio_tracks <auth_token> <count>
-/delete_midi_tracks <auth_token> <count>
-/rename_track <auth_token> <track_index> <name>
-/set_session_clip_notes <auth_token> <track_index> <slot_index> <length_beats> <notes_json> [clip_name]
-/append_session_clip_notes <auth_token> <track_index> <slot_index> <notes_json>
-/ensure_midi_tracks <auth_token> <target_count>
-/midi_cc <auth_token> <controller> <value> [channel]
-/cc64 <auth_token> <value> [channel]
+/tempo <bpm>
+/sig_num <numerator>
+/sig_den <denominator>
+/create_midi_track
+/add_midi_tracks <count> [name]
+/create_audio_track
+/add_audio_tracks <count> [prefix]
+/delete_audio_tracks <count>
+/delete_midi_tracks <count>
+/rename_track <track_index> <name>
+/set_session_clip_notes <track_index> <slot_index> <length_beats> <notes_json> [clip_name]
+/append_session_clip_notes <track_index> <slot_index> <notes_json>
+/ensure_midi_tracks <target_count>
+/midi_cc <controller> <value> [channel]
+/cc64 <value> [channel]
 ```
 
 Track create/delete batches are limited to `32` per command.
@@ -686,7 +680,7 @@ The generic RPC layer can reach broad LiveAPI behavior. Public examples and auto
 ## Payload Guidance
 
 Keep command payloads small enough for local UDP transport. The 3.1 session
-clip inspector enforces a 4096-byte encoded ACK limit. Tokenless collection
+clip inspector enforces a 4096-byte encoded ACK limit. Collection
 wrappers allow at most 256 items from one collection, 512 items across one
 request, 1,000 milliseconds of traversal, and 49,152 UTF-8 bytes of JSON.
 Requests that exceed a traversal limit fail with `api_read_limit_exceeded`.

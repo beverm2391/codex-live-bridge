@@ -1,5 +1,6 @@
 {
 	"patcher" : 	{
+		"description" : "loc-check: limit 1100 | reason: Max-generated patch JSON is a single loadable device artifact and cannot be split across source files.",
 		"fileversion" : 1,
 		"appversion" : 		{
 			"major" : 9,
@@ -31,7 +32,7 @@
 					"numinlets" : 1,
 					"numoutlets" : 0,
 					"patching_rect" : [ 30.0, 44.0, 760.0, 21.0 ],
-					"text" : "Bootstrap this device fresh on the runtime bridge track. Protected OSC commands place the local token first."
+					"text" : "Load on a dedicated MIDI track. Commands are accepted only through the loopback OSC receiver."
 				}
 
 			}
@@ -171,7 +172,7 @@
 				"box" : 				{
 					"id" : "obj-14",
 					"maxclass" : "newobj",
-					"numinlets" : 2,
+					"numinlets" : 1,
 					"numoutlets" : 3,
 					"outlettype" : [ "", "", "" ],
 					"patching_rect" : [ 600.0, 240.0, 156.0, 23.0 ],
@@ -512,29 +513,6 @@
 					"outlettype" : [ "" ],
 					"patching_rect" : [ 650.0, 90.0, 78.0, 23.0 ],
 					"text" : "qlim 10 @defer 1"
-				}
-
-			}
-, 			{
-				"box" : 				{
-					"id" : "obj-59",
-					"maxclass" : "message",
-					"numinlets" : 2,
-					"numoutlets" : 1,
-					"outlettype" : [ "" ],
-					"patching_rect" : [ 90.0, 154.0, 274.0, 23.0 ],
-					"text" : "set_auth_token CHANGE_ME_BEFORE_USE"
-				}
-
-			}
-, 			{
-				"box" : 				{
-					"id" : "obj-60",
-					"maxclass" : "comment",
-					"numinlets" : 1,
-					"numoutlets" : 0,
-					"patching_rect" : [ 90.0, 180.0, 430.0, 21.0 ],
-					"text" : "Replace with a unique local token before enabling write commands."
 				}
 
 			}
@@ -1003,20 +981,6 @@
 				"patchline" : 				{
 					"destination" : [ "obj-7", 0 ],
 					"source" : [ "obj-58", 0 ]
-				}
-
-			}
-, 			{
-				"patchline" : 				{
-					"destination" : [ "obj-59", 0 ],
-					"source" : [ "obj-4", 0 ]
-				}
-
-			}
-, 			{
-				"patchline" : 				{
-					"destination" : [ "obj-14", 1 ],
-					"source" : [ "obj-59", 0 ]
 				}
 
 			}

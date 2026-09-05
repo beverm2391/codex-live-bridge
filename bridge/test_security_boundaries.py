@@ -19,7 +19,6 @@ M4L_DIR = pathlib.Path(__file__).with_name("m4l")
 PATCH_PATH = M4L_DIR / "LiveUdpBridge.maxpat"
 BRIDGE_JS_PATH = M4L_DIR / "live_udp_bridge.js"
 RECEIVER_JS_PATH = M4L_DIR / "osc_loopback_receiver.js"
-TEST_AUTH_TOKEN = "test-auth-token-0123456789"
 
 
 def _run_bridge_js(body: str) -> object:
@@ -54,7 +53,7 @@ process.stdout.write(JSON.stringify(result));
 
 
 class SecurityBoundaryTests(unittest.TestCase):
-    def test_max_patch_isolates_network_dispatch_and_token_setup(self) -> None:
+    def test_max_patch_isolates_network_dispatch_without_auth_inlet(self) -> None:
         patch = json.loads(PATCH_PATH.read_text())
         boxes = [item["box"] for item in patch["patcher"]["boxes"]]
         lines = [item["patchline"] for item in patch["patcher"]["lines"]]
@@ -75,11 +74,6 @@ class SecurityBoundaryTests(unittest.TestCase):
             box for box in boxes if box.get("text") == "prepend osc_dispatch"
         )
         js_box = next(box for box in boxes if box.get("text") == "js live_udp_bridge.js")
-        auth_box = next(
-            box
-            for box in boxes
-            if str(box.get("text", "")).startswith("set_auth_token ")
-        )
         fallback_outlet = len(str(route["text"]).split()[1:])
 
         self.assertFalse(
@@ -92,7 +86,10 @@ class SecurityBoundaryTests(unittest.TestCase):
             limiter_rect[0],
             "the loopback receiver and qlim objects must remain visually distinct",
         )
-        self.assertEqual(js_box["numinlets"], 2)
+        self.assertEqual(js_box["numinlets"], 1)
+        self.assertFalse(
+            any(str(box.get("text", "")).startswith("set_auth_token ") for box in boxes)
+        )
         self.assertIn(
             "osc_loopback_receiver.js",
             {item["name"] for item in patch["patcher"]["dependency_cache"]},
@@ -125,32 +122,15 @@ class SecurityBoundaryTests(unittest.TestCase):
                 for line in lines
             )
         )
-        token_inputs = [
-            line
-            for line in lines
-            if line.get("destination") == [js_box["id"], 1]
-        ]
-        self.assertEqual(len(token_inputs), 1)
-        self.assertEqual(token_inputs[0].get("source"), [auth_box["id"], 0])
-
-    def test_js_rejects_network_token_setup_and_named_helpers(self) -> None:
-        result = _run_bridge_js(
-            f"""
-const wrapperCalls = [];
-context.inlet = 1;
-context.set_auth_token({json.dumps(TEST_AUTH_TOKEN)});
-context.API_FALLBACK_HANDLERS.api_session_context = (...args) => wrapperCalls.push(args);
-context.inlet = 0;
-context.osc_dispatch("set_auth_token", "attacker-token-0123456789");
-context.osc_dispatch("renameTrack", 0, "Owned");
-context.osc_dispatch("/unknown_selector", "ignored");
-context.osc_dispatch("/api/session_context", "req-context");
-return {{ token: context.bridgeAuthToken, wrapperCalls }};
-"""
+        self.assertFalse(
+            any(line.get("destination") == [js_box["id"], 1] for line in lines)
         )
 
-        self.assertEqual(result["token"], TEST_AUTH_TOKEN)
-        self.assertEqual(result["wrapperCalls"], [["req-context"]])
+    def test_js_has_no_static_auth_gate(self) -> None:
+        source = BRIDGE_JS_PATH.read_text()
+        self.assertNotIn("set_auth_token", source)
+        self.assertNotIn("bridgeAuthToken", source)
+        self.assertNotIn("requireMutationAuth", source)
 
     def test_js_fallback_rejects_inherited_object_properties(self) -> None:
         inherited_selectors = [
@@ -196,32 +176,12 @@ return {{
         )
         self.assertEqual(result["wrapperCalls"], [["req-context"]])
 
-    def test_js_token_setup_requires_local_inlet(self) -> None:
-        result = _run_bridge_js(
-            f"""
-context.inlet = 0;
-context.set_auth_token("attacker-token-0123456789");
-const afterNetworkAttempt = context.bridgeAuthToken;
-context.inlet = 1;
-context.set_auth_token({json.dumps(TEST_AUTH_TOKEN)});
-const afterLocalSetup = context.bridgeAuthToken;
-context.inlet = 0;
-context.set_auth_token("replacement-token-0123456789");
-return {{ afterNetworkAttempt, afterLocalSetup, finalToken: context.bridgeAuthToken }};
-"""
-        )
-
-        self.assertEqual(result["afterNetworkAttempt"], "")
-        self.assertEqual(result["afterLocalSetup"], TEST_AUTH_TOKEN)
-        self.assertEqual(result["finalToken"], TEST_AUTH_TOKEN)
-
     def test_js_note_writes_reject_invalid_records_and_nonfinite_times_before_mutation(self) -> None:
         result = _run_bridge_js(
             f"""
 const outputs = [];
 const mutations = [];
 context.outlet = (...args) => outputs.push(args);
-context.set_auth_token({json.dumps(TEST_AUTH_TOKEN)});
 context.ensureInitialized = () => true;
 context.getTrackOrError = () => ({{ get: () => 1 }});
 context.Dict = function Dict() {{
@@ -257,9 +217,9 @@ for (const item of cases) {{
     let exception = null;
     try {{
       if (method === "set_session_clip_notes") {{
-        context[method]({json.dumps(TEST_AUTH_TOKEN)}, 0, 0, 4, item.notes);
+        context[method](0, 0, 4, item.notes);
       }} else {{
-        context[method]({json.dumps(TEST_AUTH_TOKEN)}, 0, 0, item.notes);
+        context[method](0, 0, item.notes);
       }}
     }} catch (error) {{ exception = error.message; }}
     results.push({{
@@ -271,7 +231,7 @@ for (const item of cases) {{
 }}
 outputs.length = 0;
 mutations.length = 0;
-context.set_session_clip_notes({json.dumps(TEST_AUTH_TOKEN)}, 0, 0, "Infinity", "[" + valid + "]");
+context.set_session_clip_notes(0, 0, "Infinity", "[" + valid + "]");
 results.push({{
   method: "set_session_clip_notes", suffix: "invalid_length", exception: null,
   mutations, acks: outputs.filter((args) => args[1] === "/ack"),
@@ -314,7 +274,6 @@ const outputs = [];
 let reads = 0;
 let callback = null;
 context.outlet = (...args) => outputs.push(args);
-context.set_auth_token({json.dumps(TEST_AUTH_TOKEN)});
 context.ensureInitialized = () => true;
 context.LiveAPI = function LiveAPI(observerCallback, path) {{
   if (observerCallback) callback = observerCallback;
@@ -326,7 +285,7 @@ context.LiveAPI = function LiveAPI(observerCallback, path) {{
 return [false, true].map((emitInitial) => {{
   reads = 0;
   outputs.length = 0;
-  context.api_observe({json.dumps(TEST_AUTH_TOKEN)}, "live_set", "tempo",
+  context.api_observe("live_set", "tempo",
     JSON.stringify({{ observer_id: "obs-test", emit_initial: emitInitial }}), "req-observe");
   const registered = outputs.find((args) => args[2] === "api_observe");
   const initialReads = reads;

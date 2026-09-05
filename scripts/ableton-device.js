@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// loc-check: limit 700 | reason: Installer keeps staging, backup, rollback, and verification in one auditable transaction implementation.
 "use strict";
 
 const crypto = require("node:crypto");
@@ -12,8 +13,6 @@ const ROUTER_NAME = "live_udp_bridge.js";
 const RECEIVER_NAME = "osc_loopback_receiver.js";
 const PACKAGE_NAMES = [DEVICE_NAME, ROUTER_NAME, RECEIVER_NAME];
 const INSTALL_ORDER = [RECEIVER_NAME, ROUTER_NAME, DEVICE_NAME];
-const TOKEN_PREFIX = "set_auth_token ";
-const TOKEN_PLACEHOLDER = "CHANGE_ME_BEFORE_USE";
 const PROJECT_ROOT = fs.realpathSync(path.resolve(__dirname, ".."));
 const SOURCE_DIRECTORY = path.join(PROJECT_ROOT, "bridge", "m4l");
 const PYTHON_BRIDGE = path.join(PROJECT_ROOT, "bridge", "ableton_udp_bridge.py");
@@ -139,7 +138,7 @@ function pathsOverlap(left, right) {
 function rejectRepositoryArtifact(target, label) {
   const canonical = canonicalCandidate(target);
   if (isWithin(canonical, PROJECT_ROOT)) {
-    fail(`${label} must be outside the repository because it may contain a private token`);
+    fail(`${label} must be outside the repository because it may contain private bridge data`);
   }
   return canonical;
 }
@@ -180,7 +179,7 @@ function ensurePrivateDirectory(target, label) {
   fs.chmodSync(resolved, 0o700);
   const canonical = fs.realpathSync(resolved);
   if (isWithin(canonical, PROJECT_ROOT)) {
-    fail(`${label} must be outside the repository because it may contain a private token`);
+    fail(`${label} must be outside the repository because it may contain private bridge data`);
   }
   return canonical;
 }
@@ -288,17 +287,7 @@ function parseSourcePatch(sourcePath) {
   return document;
 }
 
-function authBox(document, label) {
-  const matches = document.patcher.boxes.filter(({ box }) =>
-    typeof box?.text === "string" && box.text.startsWith(TOKEN_PREFIX)
-  );
-  if (matches.length !== 1) {
-    fail(`${label} must contain exactly one local capability-token setup box`);
-  }
-  return matches[0].box;
-}
-
-function validateSecurePatch(document, expectedTokenText) {
+function validateSecurePatch(document) {
   const boxes = document.patcher.boxes.map(({ box }) => box || {});
   const receivers = boxes.filter((box) =>
     typeof box.text === "string" && box.text.startsWith("node.script osc_loopback_receiver.js")
@@ -316,17 +305,14 @@ function validateSecurePatch(document, expectedTokenText) {
     fail("Rebuilt device must not contain an unrestricted udpreceive object");
   }
   const routers = boxes.filter((box) => box.text === "js live_udp_bridge.js");
-  if (routers.length !== 1 || Number(routers[0].numinlets) !== 2) {
-    fail("Rebuilt device must preserve isolated local capability-token setup");
+  if (routers.length !== 1 || Number(routers[0].numinlets) !== 1) {
+    fail("Rebuilt device must expose exactly one routed-command inlet");
   }
   const dependencies = new Set(
     (document.patcher.dependency_cache || []).map((dependency) => dependency?.name)
   );
   if (!dependencies.has(ROUTER_NAME) || !dependencies.has(RECEIVER_NAME)) {
     fail("Rebuilt device is missing a required JavaScript dependency");
-  }
-  if (authBox(document, "Rebuilt device").text !== expectedTokenText) {
-    fail("Rebuilt device did not preserve its existing capability token");
   }
 }
 
@@ -336,10 +322,6 @@ function sha256(target) {
 
 function rebuildPackage(installed, stageDirectory) {
   const source = parseSourcePatch(path.join(SOURCE_DIRECTORY, "LiveUdpBridge.maxpat"));
-  const installedTokenBox = authBox(installed.document, "Existing Ableton device");
-  const tokenText = installedTokenBox.text;
-  const sourceTokenBox = authBox(source, "Repository Max patch");
-  sourceTokenBox.text = tokenText;
 
   const document = {
     ...installed.document,
@@ -351,7 +333,7 @@ function rebuildPackage(installed, stageDirectory) {
       project: installed.document.patcher.project,
     },
   };
-  validateSecurePatch(document, tokenText);
+  validateSecurePatch(document);
 
   const payload = Buffer.concat([
     Buffer.from(JSON.stringify(document, null, 2), "utf8"),
@@ -374,7 +356,7 @@ function rebuildPackage(installed, stageDirectory) {
   }
 
   const rebuilt = parseDevice(stagedDevice, "Staged Ableton device");
-  validateSecurePatch(rebuilt.document, tokenText);
+  validateSecurePatch(rebuilt.document);
   if (!installed.data.subarray(0, 28).equals(rebuilt.data.subarray(0, 28))) {
     fail("Rebuilt device did not preserve the original MIDI container metadata");
   }
@@ -395,11 +377,7 @@ function rebuildPackage(installed, stageDirectory) {
       fail(`Staged bridge dependency does not match repository source: ${name}`);
     }
   }
-  const configuredToken = tokenText.slice(TOKEN_PREFIX.length).trim();
-  return {
-    hashes,
-    tokenConfigured: configuredToken.length > 0 && configuredToken !== TOKEN_PLACEHOLDER,
-  };
+  return { hashes };
 }
 
 function inspectInstallationTargets(destinationDirectory) {
@@ -595,7 +573,6 @@ function main(argv) {
 
   const { device, destinationDirectory } = resolveDevice(options.device);
   const baseline = parseDevice(device, "Existing Ableton device");
-  authBox(baseline.document, "Existing Ableton device");
   const backupRoot = rejectRepositoryArtifact(
     options.backupRoot,
     "Persistent backup root"
@@ -608,7 +585,7 @@ function main(argv) {
     destinationDirectory,
     backupRoot
   );
-  const { hashes, tokenConfigured } = rebuildPackage(baseline, stageDirectory);
+  const { hashes } = rebuildPackage(baseline, stageDirectory);
   let backupDirectory = null;
   if (options.install) {
     backupDirectory = installPackage(
@@ -629,7 +606,6 @@ function main(argv) {
       // Compatibility alias: this only describes a successful status exchange.
       verifiedLive: options.verifyLive,
       backupDir: backupDirectory,
-      tokenConfigured,
       hashes,
     }) + "\n"
   );

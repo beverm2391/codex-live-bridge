@@ -12,8 +12,8 @@ This project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0
   Max for Live device from the tracked patch.
 - Added explicit device installation with persistent backups and automatic
   rollback when live verification fails.
-- Preserved Ableton device metadata and local authentication during updates.
-- Added a token-free localhost status check after installation, reported
+- Preserved Ableton device metadata during updates.
+- Added a localhost status check after installation, reported
   separately from loaded-runtime identity verification.
 - Added packet-bounded Arrangement project, track, and clip inspection with
   explicit MIDI-note opt-in and strict Python fragment assembly.
@@ -23,20 +23,21 @@ This project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced the Max command listener with a dependency-free Node-for-Max
   receiver that binds explicitly to `127.0.0.1:9000`, and restricted the Python
   client to loopback targets.
-- Routed unmatched Max selectors through an explicit wrapper dispatcher and
-  isolated local capability-token setup on a separate JavaScript inlet.
+- Routed unmatched Max selectors through an explicit wrapper dispatcher.
 - Rejected inherited JavaScript properties during OSC wrapper dispatch.
 - Required the expected loopback source IP and request ID for mutation-driving
   smoke-test ACKs, and bounded generic ACK and event collection.
 - Added traversal and response budgets to tokenless collection reads, bounded
   clip-note retrieval before full-record materialization, and retained small
   legacy reads behind note, batch, and response-byte limits.
+- Removed the static capability token and its second Max JavaScript inlet. The
+  bridge now relies on its explicit loopback-only local trust boundary.
 
 ### Changed
 
 - Clarified the standalone bridge setup, its three-file device package, and
   the separate Live Extension workflow.
-- Moved tokenless connection checks before optional write-token setup.
+- Clarified the localhost trust boundary and inspect/write/readback workflow.
 - Corrected setup and release links to distinguish the existing 3.1.0 release
   from unreleased source changes.
 - Documented the clip-scale properties introduced in Live Beta 12.4.15b1

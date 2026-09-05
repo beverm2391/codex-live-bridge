@@ -1,8 +1,9 @@
 // Ableton Live UDP bridge logic for Max for Live.
+// loc-check: limit 4800 | reason: Existing Max runtime is one autowatch script; splitting requires a separately qualified device-runtime refactor.
 // This file is intended to be loaded via: [js live_udp_bridge.js]
 
 autowatch = 1;
-inlets = 2; // 0 -> routed commands, 1 -> local capability-token setup
+inlets = 1; // routed commands
 outlets = 3; // 0 -> UDP ack/debug, 1 -> console/debug, 2 -> MIDI out
 
 var song = null;
@@ -11,10 +12,6 @@ var apiObservers = Object.create(null);
 var apiObserverCounter = 0;
 var MAX_API_OBSERVERS = 32;
 var MAX_OBSERVER_ID_BYTES = 128;
-var bridgeAuthToken = "";
-var AUTH_TOKEN_PLACEHOLDER = "CHANGE_ME_BEFORE_USE";
-var MIN_AUTH_TOKEN_BYTES = 16;
-var MAX_AUTH_TOKEN_BYTES = 256;
 var MAX_TRACKS_PER_COMMAND = 32;
 var MAX_TRACK_TARGET = 256;
 var API_READ_MAX_COLLECTION_ITEMS = 256;
@@ -76,63 +73,6 @@ function ackWithRequest(eventName, argsArray, requestId) {
 
 function nowMs() {
   return new Date().getTime();
-}
-
-function constantTimeStringEqual(leftValue, rightValue) {
-  var left = String(leftValue || "");
-  var right = String(rightValue || "");
-  var maxLength = Math.max(left.length, right.length);
-  var difference = left.length ^ right.length;
-  for (var i = 0; i < maxLength; i += 1) {
-    var leftCode = i < left.length ? left.charCodeAt(i) : 0;
-    var rightCode = i < right.length ? right.charCodeAt(i) : 0;
-    difference |= leftCode ^ rightCode;
-  }
-  return difference === 0;
-}
-
-function isValidAuthToken(token) {
-  var text = token === undefined || token === null ? "" : String(token).trim();
-  var byteLength = utf8ByteLength(text);
-  return (
-    text !== AUTH_TOKEN_PLACEHOLDER &&
-    byteLength >= MIN_AUTH_TOKEN_BYTES &&
-    byteLength <= MAX_AUTH_TOKEN_BYTES
-  );
-}
-
-function set_auth_token(token) {
-  if (typeof inlet === "undefined" || Number(inlet) !== 1) {
-    debug("Rejected capability-token configuration outside the local setup inlet.");
-    return;
-  }
-  var text = token === undefined || token === null ? "" : String(token).trim();
-  if (!isValidAuthToken(text)) {
-    bridgeAuthToken = "";
-    debug(
-      "Mutation authentication is disabled. Configure a unique " +
-        MIN_AUTH_TOKEN_BYTES +
-        "-to-" +
-        MAX_AUTH_TOKEN_BYTES +
-        "-byte token in the Max patch."
-    );
-    return;
-  }
-  bridgeAuthToken = text;
-  debug("Mutation authentication enabled.");
-}
-
-function requireMutationAuth(commandName, suppliedToken, requestId) {
-  var command = String(commandName || "mutation");
-  if (!isValidAuthToken(bridgeAuthToken)) {
-    ackWithRequest("error", ["auth_not_configured", command], requestId);
-    return false;
-  }
-  if (!constantTimeStringEqual(bridgeAuthToken, suppliedToken)) {
-    ackWithRequest("error", ["unauthorized_command", command], requestId);
-    return false;
-  }
-  return true;
 }
 
 function boundedInteger(value, minimum, maximum) {
@@ -783,7 +723,7 @@ function escapeRegExp(text) {
   return String(text).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function normalizeCapabilityToken(token) {
+function normalizeCapabilityName(token) {
   var value = token === undefined || token === null ? "" : String(token).trim();
   if (value.length === 0) {
     return "";
@@ -842,7 +782,7 @@ function parseApiCapabilities(infoText) {
       parsed.hasChildrenList = true;
     }
     for (var t = 0; t < tokens.length; t += 1) {
-      var token = normalizeCapabilityToken(tokens[t]);
+      var token = normalizeCapabilityName(tokens[t]);
       if (!token) {
         continue;
       }
@@ -947,8 +887,7 @@ function api_get(path, property, requestId) {
   );
 }
 
-function api_set(authToken, path, property, valueJson, requestId) {
-  if (!requireMutationAuth("api_set", authToken, requestId)) return;
+function api_set(path, property, valueJson, requestId) {
   if (!ensureInitialized(requestId)) return;
   var contextName = "api_set";
   var api = resolveApiOrError(path, contextName, requestId);
@@ -988,8 +927,7 @@ function api_set(authToken, path, property, valueJson, requestId) {
   ackWithRequest("api_set", [api.path, propName, resultJson], requestId);
 }
 
-function api_call(authToken, path, method, argsJson, requestId) {
-  if (!requireMutationAuth("api_call", authToken, requestId)) return;
+function api_call(path, method, argsJson, requestId) {
   if (!ensureInitialized(requestId)) return;
   var contextName = "api_call";
   var api = resolveApiOrError(path, contextName, requestId);
@@ -1300,8 +1238,7 @@ function api_device_parameters(devicePath, requestId) {
   ackBoundedApiReadJson("api_device_parameters", [pathText], payload, budget);
 }
 
-function api_parameter_set(authToken, parameterPath, valueJson, requestId) {
-  if (!requireMutationAuth("api_parameter_set", authToken, requestId)) return;
+function api_parameter_set(parameterPath, valueJson, requestId) {
   if (!ensureInitialized(requestId)) return;
   var pathText = parameterPath === undefined || parameterPath === null ? "" : String(parameterPath).trim();
   if (pathText.length === 0) {
@@ -1391,8 +1328,7 @@ function api_mixer_status(trackRef, requestId) {
   ackBoundedApiReadJson("api_mixer_status", [trackPath], payload, budget);
 }
 
-function api_insert_device(authToken, targetPath, deviceName, targetIndex, requestId) {
-  if (!requireMutationAuth("api_insert_device", authToken, requestId)) return;
+function api_insert_device(targetPath, deviceName, targetIndex, requestId) {
   if (!ensureInitialized(requestId)) return;
   var pathText = targetPath === undefined || targetPath === null ? "" : String(targetPath).trim();
   var nameText = deviceName === undefined || deviceName === null ? "" : String(deviceName).trim();
@@ -1437,8 +1373,7 @@ function api_insert_device(authToken, targetPath, deviceName, targetIndex, reque
   ackWithRequest("api_insert_device", [resolvedTargetPath, nameText, safeJsonStringify(payload, "insert_device")], requestId);
 }
 
-function api_insert_chain(authToken, rackPath, targetIndex, requestId) {
-  if (!requireMutationAuth("api_insert_chain", authToken, requestId)) return;
+function api_insert_chain(rackPath, targetIndex, requestId) {
   if (!ensureInitialized(requestId)) return;
   var pathText = rackPath === undefined || rackPath === null ? "" : String(rackPath).trim();
   if (pathText.length === 0) {
@@ -1481,8 +1416,7 @@ function api_insert_chain(authToken, rackPath, targetIndex, requestId) {
   ackWithRequest("api_insert_chain", [resolvedRackPath, safeJsonStringify(payload, "insert_chain")], requestId);
 }
 
-function api_drum_chain_in_note(authToken, chainPath, noteValue, requestId) {
-  if (!requireMutationAuth("api_drum_chain_in_note", authToken, requestId)) return;
+function api_drum_chain_in_note(chainPath, noteValue, requestId) {
   if (!ensureInitialized(requestId)) return;
   var pathText = chainPath === undefined || chainPath === null ? "" : String(chainPath).trim();
   var note = Number(noteValue);
@@ -3460,8 +3394,7 @@ function api_arrangement_clip_inspect(trackIndex, clipIndex, includeNotes, schem
   );
 }
 
-function api_observe(authToken, path, property, optionsJson, requestId) {
-  if (!requireMutationAuth("api_observe", authToken, requestId)) return;
+function api_observe(path, property, optionsJson, requestId) {
   if (!ensureInitialized(requestId)) return;
   var contextName = "api_observe";
   var api = resolveApiOrError(path, contextName, requestId);
@@ -3553,8 +3486,7 @@ function api_observe(authToken, path, property, optionsJson, requestId) {
   ackWithRequest("api_observe", [observerId, normalizeLiveApiPath(observerApi.path, apiPath), propName, payloadJson], requestId);
 }
 
-function api_unobserve(authToken, observerId, requestId) {
-  if (!requireMutationAuth("api_unobserve", authToken, requestId)) return;
+function api_unobserve(observerId, requestId) {
   if (!ensureInitialized(requestId)) return;
   var key = observerId === undefined || observerId === null ? "" : String(observerId).trim();
   if (key.length === 0) {
@@ -3582,8 +3514,7 @@ function api_unobserve(authToken, observerId, requestId) {
   );
 }
 
-function api_clear_observers(authToken, requestId) {
-  if (!requireMutationAuth("api_clear_observers", authToken, requestId)) return;
+function api_clear_observers(requestId) {
   if (!ensureInitialized(requestId)) return;
   var cleared = clearAllObserverEntries();
   var resultJson = safeJsonStringify({ cleared: Number(cleared || 0) }, "api_clear_observers");
@@ -3727,22 +3658,19 @@ function emitMidiCc(controller, value, channel, contextName) {
   return { controller: ctrl, value: val, channel: ch, status: status };
 }
 
-function midi_cc(authToken, controller, value, channel, requestId) {
-  if (!requireMutationAuth("midi_cc", authToken, requestId)) return;
+function midi_cc(controller, value, channel, requestId) {
   if (!ensureInitialized(requestId)) return;
   var result = emitMidiCc(controller, value, channel, "midi_cc");
   ackWithRequest("midi_cc", [result.controller, result.value, result.channel], requestId);
 }
 
-function cc64(authToken, value, channel, requestId) {
-  if (!requireMutationAuth("cc64", authToken, requestId)) return;
+function cc64(value, channel, requestId) {
   if (!ensureInitialized(requestId)) return;
   var result = emitMidiCc(64, value, channel, "cc64");
   ackWithRequest("cc64", [result.value, result.channel], requestId);
 }
 
-function tempo(authToken, bpm) {
-  if (!requireMutationAuth("tempo", authToken)) return;
+function tempo(bpm) {
   if (!ensureInitialized()) return;
   var value = Number(bpm);
   if (!(value > 0)) {
@@ -3753,8 +3681,7 @@ function tempo(authToken, bpm) {
   ack("ack", "tempo", value);
 }
 
-function sig_num(authToken, num) {
-  if (!requireMutationAuth("sig_num", authToken)) return;
+function sig_num(num) {
   if (!ensureInitialized()) return;
   var value = Math.floor(Number(num));
   if (!(value > 0)) {
@@ -3765,8 +3692,7 @@ function sig_num(authToken, num) {
   ack("ack", "sig_num", value);
 }
 
-function sig_den(authToken, den) {
-  if (!requireMutationAuth("sig_den", authToken)) return;
+function sig_den(den) {
   if (!ensureInitialized()) return;
   var value = Math.floor(Number(den));
   if (!(value > 0)) {
@@ -3777,8 +3703,7 @@ function sig_den(authToken, den) {
   ack("ack", "sig_den", value);
 }
 
-function create_midi_track(authToken) {
-  if (!requireMutationAuth("create_midi_track", authToken)) return;
+function create_midi_track() {
   if (!ensureInitialized()) return;
   song.call("create_midi_track", -1);
   ack("ack", "create_midi_track", -1);
@@ -3806,8 +3731,7 @@ function renameTrack(trackIndex, name) {
   }
 }
 
-function create_audio_track(authToken) {
-  if (!requireMutationAuth("create_audio_track", authToken)) return;
+function create_audio_track() {
   if (!ensureInitialized()) return;
   song.call("create_audio_track", -1);
   ack("ack", "create_audio_track", -1);
@@ -3849,8 +3773,7 @@ function isMidiTrack(flags) {
   return flags.hasMidiInput === 1;
 }
 
-function add_midi_tracks(authToken, count, name) {
-  if (!requireMutationAuth("add_midi_tracks", authToken)) return;
+function add_midi_tracks(count, name) {
   if (!ensureInitialized()) return;
   var targetCount = boundedInteger(count, 1, MAX_TRACKS_PER_COMMAND);
   if (targetCount === null) {
@@ -3917,8 +3840,7 @@ function getTotalTracksOrError(contextName, requestId, budget) {
   return total;
 }
 
-function add_audio_tracks(authToken, count, prefix) {
-  if (!requireMutationAuth("add_audio_tracks", authToken)) return;
+function add_audio_tracks(count, prefix) {
   if (!ensureInitialized()) return;
   var targetCount = boundedInteger(count, 1, MAX_TRACKS_PER_COMMAND);
   if (targetCount === null) {
@@ -3966,8 +3888,7 @@ function add_audio_tracks(authToken, count, prefix) {
   ack("ack", "add_audio_tracks", targetCount, namePrefix, created, finalTotal);
 }
 
-function delete_midi_tracks(authToken, count) {
-  if (!requireMutationAuth("delete_midi_tracks", authToken)) return;
+function delete_midi_tracks(count) {
   if (!ensureInitialized()) return;
   var targetCount = boundedInteger(count, 1, MAX_TRACKS_PER_COMMAND);
   if (targetCount === null) {
@@ -4020,8 +3941,7 @@ function delete_midi_tracks(authToken, count) {
   ack("ack", "delete_midi_tracks", targetCount, deleted, finalTotal);
 }
 
-function rename_track(authToken, trackIndex, name) {
-  if (!requireMutationAuth("rename_track", authToken)) return;
+function rename_track(trackIndex, name) {
   if (!ensureInitialized()) return;
   var index = Math.floor(Number(trackIndex));
   if (!(index >= 0)) {
@@ -4219,8 +4139,7 @@ function buildGenericDict(payload, contextName, requestId) {
   return { wrapper: wrapper, dict: parsedDict };
 }
 
-function set_session_clip_notes(authToken, trackIndex, slotIndex, lengthBeats, notesJson, clipName) {
-  if (!requireMutationAuth("set_session_clip_notes", authToken)) return;
+function set_session_clip_notes(trackIndex, slotIndex, lengthBeats, notesJson, clipName) {
   if (!ensureInitialized()) return;
   var startedMs = new Date().getTime();
 
@@ -4347,8 +4266,7 @@ function set_session_clip_notes(authToken, trackIndex, slotIndex, lengthBeats, n
   );
 }
 
-function append_session_clip_notes(authToken, trackIndex, slotIndex, notesJson) {
-  if (!requireMutationAuth("append_session_clip_notes", authToken)) return;
+function append_session_clip_notes(trackIndex, slotIndex, notesJson) {
   if (!ensureInitialized()) return;
   var startedMs = new Date().getTime();
 
@@ -4612,8 +4530,7 @@ function countAudioTracks(totalTracks, contextName, requestId, budget) {
   return audioCount;
 }
 
-function delete_audio_tracks(authToken, count) {
-  if (!requireMutationAuth("delete_audio_tracks", authToken)) return;
+function delete_audio_tracks(count) {
   if (!ensureInitialized()) return;
   var targetCount = boundedInteger(count, 1, MAX_TRACKS_PER_COMMAND);
   if (targetCount === null) {
@@ -4677,8 +4594,7 @@ function status() {
   ack("ack", "status", totalTracks, midiTracks, audioTracks, returnTracks, song.path, id);
 }
 
-function ensure_midi_tracks(authToken, targetCount) {
-  if (!requireMutationAuth("ensure_midi_tracks", authToken)) return;
+function ensure_midi_tracks(targetCount) {
   if (!ensureInitialized()) return;
   var target = boundedInteger(targetCount, 0, MAX_TRACK_TARGET);
   if (target === null) {

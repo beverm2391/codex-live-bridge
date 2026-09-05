@@ -111,18 +111,17 @@ class PublicDocsTests(unittest.TestCase):
         ):
             self.assertIn(phrase, text)
 
-    def test_public_docs_define_authenticated_mutation_boundary(self) -> None:
+    def test_public_docs_define_loopback_local_trust_boundary(self) -> None:
         readme = README.read_text(encoding="utf-8")
         protocol = PROTOCOL.read_text(encoding="utf-8")
         security = (REPO_ROOT / "SECURITY.md").read_text(encoding="utf-8")
 
-        self.assertIn("CODEX_LIVE_BRIDGE_TOKEN", readme)
-        self.assertIn("capability token", readme)
-        self.assertIn("/api/set <auth_token>", protocol)
-        self.assertIn("/api/call <auth_token>", protocol)
-        self.assertIn("Read-only commands remain tokenless", protocol)
-        self.assertIn("authenticated capability token", security)
-        self.assertNotIn("through unauthenticated OSC/UDP", security)
+        self.assertIn("no application-level authentication", readme)
+        self.assertIn("/api/set <path>", protocol)
+        self.assertIn("/api/call <path>", protocol)
+        self.assertRegex(protocol, r"OS account\s+security is the trust boundary")
+        self.assertIn("no application-level authentication", security)
+        self.assertIn("127.0.0.1:9000", security)
 
     def test_readme_code_paths_exist(self) -> None:
         text = README.read_text(encoding="utf-8")
@@ -160,18 +159,18 @@ class PublicDocsTests(unittest.TestCase):
         self.assertIn("Save As", install_text)
         self.assertNotIn("Export Max for Live Device", install_text)
 
-    def test_readme_checks_read_only_status_before_optional_write_access(self) -> None:
+    def test_readme_checks_status_before_explaining_local_write_access(self) -> None:
         text = README.read_text(encoding="utf-8")
         quick_start = text.split("## Quick Start\n", 1)[1].split(
             "## Included Files\n", 1
         )[0]
 
         read_only_index = quick_start.index("Verify the bridge with a read-only status command")
-        token_index = quick_start.index("Optional: configure a local token")
+        boundary_index = quick_start.index("Keep the bridge local")
 
-        self.assertLess(read_only_index, token_index)
-        self.assertIn("Read-only commands do not require a token.", quick_start)
-        self.assertIn("printf '%s\\n' \"$CODEX_LIVE_BRIDGE_TOKEN\"", quick_start)
+        self.assertLess(read_only_index, boundary_index)
+        self.assertIn("There is no application-level authentication", quick_start)
+        self.assertIn("Inspect before writes", quick_start)
 
     def test_installation_starts_with_read_only_access(self) -> None:
         text = (REPO_ROOT / "INSTALL.md").read_text(encoding="utf-8")
@@ -188,10 +187,10 @@ class PublicDocsTests(unittest.TestCase):
         )
         self.assertLess(
             text.index("Verify the read-only connection"),
-            text.index("## Configure Authenticated Writes"),
+            text.index("## Local Control Boundary"),
         )
-        self.assertIn("read -rs CODEX_LIVE_BRIDGE_TOKEN", text)
-        self.assertIn("Leave `CHANGE_ME_BEFORE_USE` unchanged", text)
+        self.assertIn("no application-level authentication", text)
+        self.assertIn("verify state afterward", text)
 
     def test_readme_documents_fail_closed_acknowledgements(self) -> None:
         text = README.read_text(encoding="utf-8")
@@ -200,10 +199,10 @@ class PublicDocsTests(unittest.TestCase):
         self.assertRegex(text, r"a complete matching response does\s+not arrive")
         self.assertRegex(text, r"does not send the command when\s+the listener cannot open")
 
-    def test_readme_registers_authenticated_observers_before_listening(self) -> None:
+    def test_readme_registers_observers_before_listening(self) -> None:
         text = README.read_text(encoding="utf-8")
         example_match = re.search(
-            r"Register and listen for tempo changes after configuring the local token:"
+            r"Register and listen for tempo changes:"
             r"\n\n```bash\n(?P<command>.*?)\n```",
             text,
             flags=re.DOTALL,
@@ -240,7 +239,6 @@ class PublicDocsTests(unittest.TestCase):
                 "node scripts/ableton-device.js --install --verify-live",
                 text,
             )
-            self.assertIn("token", text)
             self.assertIn("backup", text)
             self.assertNotIn("/" + "Users/", text)
 
@@ -251,7 +249,6 @@ class PublicDocsTests(unittest.TestCase):
             "runtimeIdentityVerified",
             "verifiedLive",
             "backupDir",
-            "tokenConfigured",
             "hashes",
         ):
             self.assertIn(field, readme)
@@ -280,7 +277,7 @@ class PublicDocsTests(unittest.TestCase):
         self.assertIn("all three installed files are restored", install)
         self.assertIn("directories inside this repository are", install)
         self.assertIn("Do not commit or upload them", install)
-        self.assertIn("placeholder-only device", install)
+        self.assertIn("no application-level authentication", install)
         self.assertIn("runtimeIdentityVerified: false", install)
         self.assertIn("An older loaded device can answer", install)
 
@@ -298,7 +295,8 @@ class PublicDocsTests(unittest.TestCase):
             "## [3.1.0] - 2026-06-10", 1
         )
         self.assertIn("scripts/ableton-device.js", unreleased)
-        self.assertIn("token-free localhost status", unreleased)
+        self.assertIn("localhost status", unreleased)
+        self.assertIn("Removed the static capability token", unreleased)
         self.assertIn("Arrangement project, track, and clip inspection", unreleased)
         self.assertNotIn("scripts/ableton-device.js", release)
         self.assertIn("Current release: [3.1.0]", README.read_text(encoding="utf-8"))
