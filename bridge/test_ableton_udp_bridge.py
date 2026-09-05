@@ -1484,46 +1484,6 @@ class BridgeCliTests(unittest.TestCase):
             any(str(box.get("text", "")).startswith("set_auth_token ") for box in boxes)
         )
 
-    @unittest.skip("static token authentication was removed from Ben's fork")
-    def test_js_rejects_unauthenticated_mutations_before_liveapi_side_effects(self) -> None:
-        result = _run_bridge_js(
-            f"""
-const outputs = [];
-const sideEffects = [];
-context.outlet = (...args) => outputs.push(args);
-context.ensureInitialized = () => true;
-context.song = {{
-  call: (...args) => sideEffects.push(["song.call", ...args]),
-  set: (...args) => sideEffects.push(["song.set", ...args]),
-}};
-context.resolveApiOrError = () => ({{
-  path: "live_set",
-  id: 1,
-  set: (...args) => sideEffects.push(["api.set", ...args]),
-  call: (...args) => sideEffects.push(["api.call", ...args]),
-}});
-context.getApiCapabilities = () => ({{
-  hasPropertiesList: false,
-  hasFunctionsList: false,
-}});
-context.set_auth_token("test-auth-token-0123456789");
-context.api_set("wrong-token", "live_set", "tempo", "120", "req-set");
-context.api_call("wrong-token", "live_set", "create_midi_track", "[-1]", "req-call");
-context.delete_midi_tracks("wrong-token", 1);
-context.delete_audio_tracks("wrong-token", 1);
-context.set_session_clip_notes("wrong-token", 0, 0, 4, "{{\\"notes\\":[]}}", "Clip");
-context.midi_cc("wrong-token", 64, 127, 1, "req-cc");
-return {{ outputs, sideEffects }};
-"""
-        )
-
-        self.assertEqual(result["sideEffects"], [])
-        error_codes = [
-            item[3]
-            for item in result["outputs"]
-            if len(item) > 3 and item[1:3] == ["/ack", "error"]
-        ]
-        self.assertEqual(error_codes, ["unauthorized_command"] * 6)
 
     def test_js_accepts_generic_property_write(self) -> None:
         result = _run_bridge_js(
@@ -1549,26 +1509,6 @@ return writes;
 
         self.assertEqual(result, [["tempo", 120]])
 
-    @unittest.skip("static token authentication was removed from Ben's fork")
-    def test_js_placeholder_token_keeps_mutations_disabled(self) -> None:
-        result = _run_bridge_js(
-            """
-const outputs = [];
-context.outlet = (...args) => outputs.push(args);
-context.set_auth_token("CHANGE_ME_BEFORE_USE");
-context.api_set(
-  "CHANGE_ME_BEFORE_USE",
-  "live_set",
-  "tempo",
-  "120",
-  "req-set"
-);
-return outputs.filter((args) => args[1] === "/ack");
-"""
-        )
-
-        self.assertEqual(result[0][3], "auth_not_configured")
-        self.assertEqual(result[0][4], "api_set")
 
     def test_js_bounds_track_creation_batches_and_targets(self) -> None:
         result = _run_bridge_js(
