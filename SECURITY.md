@@ -29,7 +29,7 @@ Please do not open a public issue with exploitable details.
 Preferred path:
 
 - Use GitHub private vulnerability reporting:
-  `https://github.com/sunflower-of-parchman/codex-live-bridge/security/advisories/new`
+  `https://github.com/beverm2391/codex-live-bridge/security/advisories/new`
 
 If private reporting is unavailable in your interface, open an issue with a
 minimal description and request a private follow-up channel.

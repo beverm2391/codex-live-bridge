@@ -1,6 +1,7 @@
 # codex-live-bridge
 
-Current release: [3.1.0](https://github.com/sunflower-of-parchman/codex-live-bridge/releases/tag/codex-live-bridge-v3.1.0)
+The latest packaged release is upstream's
+[3.1.0](https://github.com/sunflower-of-parchman/codex-live-bridge/releases/tag/codex-live-bridge-v3.1.0).
 
 The current source includes unreleased security and runtime fixes that are
 not in the 3.1.0 release. Use the source setup below for these fixes; a newer
@@ -10,12 +11,17 @@ release package is not yet available.
 codex and local scripts inspect and change a Live set through LiveAPI on the
 same workstation.
 
+This repository is the maintained downstream product. It keeps the original
+history, MIT license, and upstream attribution. The upstream repository remains
+a reference, not the authority for product direction. The inherited name
+remains while product naming is open.
+
 The repo ships the editable Max patch and the JavaScript files that run the
 bridge. A Python OSC client/CLI sends local commands on UDP `9000` and receives
 ACKs or observer events on UDP `9001`.
 
-Started during the OpenAI 2026 Hackathon in San Francisco, built in tandem
-with GPT-5.3-Codex.
+Michael Wall originally created this project with GPT-5.3-Codex during the
+OpenAI 2026 Hackathon in San Francisco.
 
 This project is independent and is not affiliated with or endorsed by OpenAI,
 Ableton, or Cycling '74. All trademarks belong to their respective owners.
@@ -57,7 +63,7 @@ and [join the Live Beta](https://www.ableton.com/en/beta/).
 1. Clone and run the tests:
 
 ```bash
-git clone https://github.com/sunflower-of-parchman/codex-live-bridge.git
+git clone https://github.com/beverm2391/codex-live-bridge.git
 cd codex-live-bridge
 python3 -m unittest discover -s bridge -p "test_*.py"
 python3 -m unittest discover -s tests -p "test_*.py"
@@ -149,11 +155,17 @@ false. Reload the device and verify the affected commands in a disposable set.
 - `bridge/ableton_udp_bridge.py`: Python OSC client/CLI with ACK and listen modes
 - `bridge/full_surface_smoke_test.py`: opt-in mutating smoke test for disposable sets
 - `scripts/ableton-device.js`: local device staging and opt-in installation
+- `CAPABILITIES.md`: what an agent can do now and what blocks real workflows
 - `bridge/commands.md`: command cheat sheet
 - `INSTALL.md`: source export and device loading instructions
 - `PROTOCOL.md`: canonical OSC/UDP protocol contract
 
 ## Capability Summary
+
+The bridge provides composable resources, not hardcoded workflows. See
+`CAPABILITIES.md` for what agents can do reliably today and what still blocks
+clip insertion, warp control, device loading, browser search, tagging,
+transport control, and multi-file audio placement.
 
 The bridge exposes four command families:
 
@@ -375,6 +387,7 @@ client can bind the default `9001` port at a time.
 
 ## Project Docs
 
+- `CAPABILITIES.md`: what agents can do and current workflow blockers
 - `PROTOCOL.md`: public protocol and safety classes
 - `INSTALL.md`: source export and device loading instructions
 - `bridge/commands.md`: command examples

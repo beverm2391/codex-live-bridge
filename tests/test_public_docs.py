@@ -23,6 +23,16 @@ class PublicDocsTests(unittest.TestCase):
         self.assertIn("LiveAPI", text)
         self.assertIn("Python OSC client/CLI", text)
 
+    def test_readme_defines_downstream_product_authority(self) -> None:
+        readme = README.read_text(encoding="utf-8")
+        security = (REPO_ROOT / "SECURITY.md").read_text(encoding="utf-8")
+
+        self.assertIn("maintained downstream product", readme)
+        self.assertIn("reference, not the authority for product direction", readme)
+        self.assertIn("MIT license, and upstream attribution", readme)
+        self.assertIn("github.com/beverm2391/codex-live-bridge.git", readme)
+        self.assertIn("github.com/beverm2391/codex-live-bridge/security", security)
+
     def test_readme_mentions_observer_surface(self) -> None:
         text = README.read_text(encoding="utf-8")
         for command in (
@@ -60,7 +70,7 @@ class PublicDocsTests(unittest.TestCase):
         changelog = CHANGELOG.read_text(encoding="utf-8")
         protocol = PROTOCOL.read_text(encoding="utf-8")
 
-        self.assertIn("Current release: [3.1.0]", readme)
+        self.assertIn("latest packaged release is upstream's\n[3.1.0]", readme)
         self.assertIn("releases/tag/codex-live-bridge-v3.1.0", readme)
         self.assertIn("unreleased security and runtime fixes", readme)
         self.assertNotIn("## [3.2.0]", changelog)
@@ -299,7 +309,10 @@ class PublicDocsTests(unittest.TestCase):
         self.assertIn("Removed the static capability token", unreleased)
         self.assertIn("Arrangement project, track, and clip inspection", unreleased)
         self.assertNotIn("scripts/ableton-device.js", release)
-        self.assertIn("Current release: [3.1.0]", README.read_text(encoding="utf-8"))
+        self.assertIn(
+            "latest packaged release is upstream's\n[3.1.0]",
+            README.read_text(encoding="utf-8"),
+        )
 
     def test_removed_auxiliary_files_stay_removed(self) -> None:
         stale_paths = [
