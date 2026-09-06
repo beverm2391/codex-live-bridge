@@ -155,7 +155,6 @@ false. Reload the device and verify the affected commands in a disposable set.
 - `bridge/ableton_udp_bridge.py`: Python OSC client/CLI with ACK and listen modes
 - `bridge/full_surface_smoke_test.py`: opt-in mutating smoke test for disposable sets
 - `scripts/ableton-device.js`: local device staging and opt-in installation
-- `CAPABILITIES.md`: what an agent can do now and what blocks real workflows
 - `bridge/commands.md`: command cheat sheet
 - `INSTALL.md`: source export and device loading instructions
 - `PROTOCOL.md`: canonical OSC/UDP protocol contract
